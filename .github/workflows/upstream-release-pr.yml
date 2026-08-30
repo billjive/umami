@@ -1,0 +1,73 @@
+# Fork-only workflow (billjive/umami): opens a PR whenever upstream
+# umami-software/umami publishes a new release, mimicking Renovate-style
+# dependency-update PRs. Review the release notes, merge, and the Vercel
+# git integration deploys it.
+name: Upstream release PR
+
+on:
+  schedule:
+    - cron: "17 9 * * 1" # Mondays 09:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find latest upstream release
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo umami-software/umami --json tagName -q .tagName)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Latest upstream release: $tag"
+
+      - name: Check whether already merged or PR already open
+        id: check
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          git remote add upstream https://github.com/umami-software/umami.git
+          git fetch --no-tags upstream "refs/tags/$TAG:refs/tags/$TAG"
+          if git merge-base --is-ancestor "$TAG" HEAD; then
+            echo "Already up to date with $TAG"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code origin "refs/heads/update/$TAG" >/dev/null; then
+            echo "Branch update/$TAG already pushed (PR likely open)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge release tag and open PR
+        if: steps.check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "update/$TAG"
+          if ! git merge --no-edit "$TAG"; then
+            echo "::error::Merging $TAG conflicts with fork patches — resolve manually:"
+            echo "::error::  git fetch upstream --tags && git merge $TAG"
+            exit 1
+          fi
+          git push origin "update/$TAG"
+          gh pr create \
+            --base master \
+            --head "update/$TAG" \
+            --title "Update to umami $TAG" \
+            --body "Merges upstream release [\`$TAG\`](https://github.com/umami-software/umami/releases/tag/$TAG) into the fork, keeping local patches.
+
+Release notes: https://github.com/umami-software/umami/releases/tag/$TAG
+
+Merging deploys to production via the Vercel git integration (migrations run during the build)."
