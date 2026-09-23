@@ -1,7 +1,7 @@
 # Fork-only workflow (billjive/umami): opens a PR whenever upstream
 # umami-software/umami publishes a new release, mimicking Renovate-style
-# dependency-update PRs. Review the release notes, merge, and the Vercel
-# git integration deploys it.
+# dependency-update PRs. Review the release notes, merge, then deploy
+# with `vercel --prod` from the merged checkout.
 name: Upstream release PR
 
 on:
@@ -66,8 +66,11 @@ jobs:
             --base master \
             --head "update/$TAG" \
             --title "Update to umami $TAG" \
-            --body "Merges upstream release [\`$TAG\`](https://github.com/umami-software/umami/releases/tag/$TAG) into the fork, keeping local patches.
+            --body "$(cat <<EOF
+          Merges upstream release [\`$TAG\`](https://github.com/umami-software/umami/releases/tag/$TAG) into the fork, keeping local patches.
 
-Release notes: https://github.com/umami-software/umami/releases/tag/$TAG
+          Release notes: https://github.com/umami-software/umami/releases/tag/$TAG
 
-Merging deploys to production via the Vercel git integration (migrations run during the build)."
+          Merging to master does not deploy by itself: run \`vercel --prod\` from the merged checkout (migrations run during the build).
+          EOF
+          )"
