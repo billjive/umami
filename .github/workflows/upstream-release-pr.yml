@@ -68,7 +68,10 @@ jobs:
             exit 1
           fi
           git push origin "update/$TAG"
+          # --repo is required: with an `upstream` remote present, gh would
+          # otherwise target the parent repo (umami-software/umami) as base.
           gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
             --base master \
             --head "update/$TAG" \
             --title "Update to umami $TAG" \
